@@ -307,3 +307,182 @@ export function parseStashes(out: string): ScStash[] {
 export function countLines(out: string): number {
   return out.split(/\r?\n/).filter(line => line.trim() !== '').length
 }
+
+/**
+ * The remote-tracking refs and the branch each remote's HEAD points at, as
+ * `git for-each-ref refs/remotes` lists them in REMOTE_REF_FORMAT.
+ */
+export const REMOTE_REF_FORMAT = '--format=%(refname)%1f%(symref)%1f%(objectname)'
+
+const REMOTES_PREFIX = 'refs/remotes/'
+
+/**
+ * Reads `git for-each-ref refs/remotes` in REMOTE_REF_FORMAT: the branch
+ * refs (`origin/main`) with the commit each points at, and each remote's
+ * HEAD (`origin/HEAD` → `origin/main`).
+ */
+export function parseRemoteRefs(out: string): { refs: Set<string>; heads: Map<string, string>; shas: Map<string, string> } {
+  const refs = new Set<string>()
+  const heads = new Map<string, string>()
+  const shas = new Map<string, string>()
+
+  for (const line of out.split(/\r?\n/)) {
+    const [full = '', target = '', sha = ''] = line.split('\x1f')
+
+    if (!full.startsWith(REMOTES_PREFIX)) {
+      continue
+    }
+
+    const name = full.slice(REMOTES_PREFIX.length)
+
+    if (name.endsWith('/HEAD')) {
+      if (target.startsWith(REMOTES_PREFIX)) {
+        heads.set(name.slice(0, -'/HEAD'.length), target.slice(REMOTES_PREFIX.length))
+      }
+
+      continue
+    }
+
+    refs.add(name)
+
+    if (sha !== '') {
+      shas.set(name, sha)
+    }
+  }
+
+  return { refs, heads, shas }
+}
+
+/**
+ * The remotes in the order a base branch is looked for: `upstream` first
+ * (in a fork it is the project the work goes back into), then `origin`,
+ * then the rest as git lists them.
+ */
+export function baseRemotesOf(remotes: readonly string[]): string[] {
+  const preferred = ['upstream', 'origin'].filter(name => remotes.includes(name))
+
+  return [...preferred, ...remotes.filter(name => !preferred.includes(name))]
+}
+
+const DEFAULT_BRANCHES = ['main', 'master']
+
+/**
+ * The base branch among the remote-tracking refs. A configured name wins:
+ * a full ref (`origin/develop`) as it is, a bare one (`develop`) on the first
+ * remote that has it. Otherwise each remote in turn offers its HEAD, then
+ * `main`, then `master`.
+ *
+ * @param remoteRefs what parseRemoteRefs read
+ * @param remotes the remotes, as `git remote` lists them
+ * @param configured the configured base branch, empty for automatic
+ * @returns the ref and the remote and branch it names, or null when none
+ *   fits (a configured name no remote has is not swapped for another)
+ */
+export function pickBase(
+  remoteRefs: { refs: ReadonlySet<string>; heads: ReadonlyMap<string, string> },
+  remotes: readonly string[],
+  configured: string,
+): { ref: string; remote: string; branch: string } | null {
+  const order = baseRemotesOf(remotes)
+  const wanted = configured.trim()
+
+  const split = (ref: string) => {
+    const remote = order
+      .filter(name => ref.startsWith(`${name}/`))
+      .sort((a, b) => b.length - a.length)[0]
+
+    return remote === undefined ? null : { ref, remote, branch: ref.slice(remote.length + 1) }
+  }
+
+  if (wanted !== '') {
+    if (remoteRefs.refs.has(wanted)) {
+      return split(wanted)
+    }
+
+    const found = order.map(remote => `${remote}/${wanted}`).find(ref => remoteRefs.refs.has(ref))
+
+    return found === undefined ? null : split(found)
+  }
+
+  for (const remote of order) {
+    const head = remoteRefs.heads.get(remote)
+    const candidates = [...(head === undefined ? [] : [head]), ...DEFAULT_BRANCHES.map(branch => `${remote}/${branch}`)]
+    const found = candidates.find(ref => remoteRefs.refs.has(ref))
+
+    if (found !== undefined) {
+      return split(found)
+    }
+  }
+
+  return null
+}
+
+/**
+ * Reads `git rev-list --left-right --count HEAD...<base>`: commits only on
+ * HEAD (ahead), then only on the base (behind).
+ */
+export function parseLeftRight(out: string): { ahead: number; behind: number } | null {
+  const match = /^(\d+)\s+(\d+)/.exec(out.trim())
+
+  return match ? { ahead: Number(match[1]), behind: Number(match[2]) } : null
+}
+
+/**
+ * The remotes that get a base branch of their own: `upstream` and `origin`
+ * where they exist (a fork has both), else the first remote.
+ */
+export function baseRemoteSetOf(remotes: readonly string[]): string[] {
+  const named = baseRemotesOf(remotes).filter(name => name === 'upstream' || name === 'origin')
+
+  return named.length > 0 ? named : remotes.slice(0, 1)
+}
+
+/**
+ * One base branch per base remote, in order: in a fork the project's
+ * (`upstream/main`) and the fork's own (`origin/main`). A configured full ref
+ * (`origin/develop`) is the one base; a bare name (`develop`) is looked for
+ * on each base remote; otherwise each remote offers its HEAD, then `main`,
+ * then `master`.
+ *
+ * @param remoteRefs what parseRemoteRefs read
+ * @param remotes the remotes, as `git remote` lists them
+ * @param configured the configured base branch, empty for automatic
+ */
+export function pickBases(
+  remoteRefs: { refs: ReadonlySet<string>; heads: ReadonlyMap<string, string> },
+  remotes: readonly string[],
+  configured: string,
+): { ref: string; remote: string; branch: string }[] {
+  const wanted = configured.trim()
+
+  if (wanted !== '' && remoteRefs.refs.has(wanted)) {
+    const full = pickBase(remoteRefs, remotes, wanted)
+
+    return full === null ? [] : [full]
+  }
+
+  return baseRemoteSetOf(remotes)
+    .map(remote => pickBase(remoteRefs, [remote], wanted))
+    .filter((base): base is { ref: string; remote: string; branch: string } => base !== null)
+}
+
+/**
+ * Reads `git merge-tree --write-tree --name-only --no-messages`: exit 0 is
+ * a clean merge, exit 1 lists the conflicting files after the tree's id;
+ * anything else (a git before 2.38 knows no `--write-tree`) says nothing.
+ *
+ * @returns the conflicting files, empty for a clean merge, null when unknown
+ */
+export function parseMergeTree(out: string, exitCode: number): string[] | null {
+  if (exitCode === 0) {
+    return []
+  }
+
+  if (exitCode !== 1) {
+    return null
+  }
+
+  const [, ...files] = out.split(/\r?\n/).filter(line => line !== '')
+
+  return files
+}

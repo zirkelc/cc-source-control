@@ -12,7 +12,7 @@ import { icon, tintedIcon } from './icons'
 import { graphCells, graphSource, LANE_COLORS, LANE_THEME, LANE_WIDTH, layoutGraph, ROW_HEIGHT } from './graph'
 import type { GraphEntry, GraphRow } from './graph'
 import type { Handlers } from './handlers'
-import { branchTextOf, canPublish, changeCountOf, countsOf, freshnessOf, operationTextOf } from './model'
+import { baseNameOf, baseUpdateOf, branchTextOf, canPublish, changeCountOf, countsOf, freshnessOf, operationTextOf } from './model'
 import { COLOR, GLYPH, LETTER_COLOR } from './theme'
 import type { Kit } from './theme'
 
@@ -373,9 +373,10 @@ function stashRow(kit: Kit, stash: ScStash): RenderElement {
   )
 }
 
-function headerRow(kit: Kit, handlers: Handlers, isBusy: boolean, isDocked: boolean): RenderElement {
+function headerRow(kit: Kit, snapshot: ScSnapshot | null, handlers: Handlers, isBusy: boolean, isDocked: boolean): RenderElement {
   const { Box, Button, Text } = kit
   const isNarrow = kit.columns < 44
+  const baseUpdate = snapshot === null ? null : baseUpdateOf(snapshot)
 
   const hasChrome = kit.Svg !== null
 
@@ -395,8 +396,47 @@ function headerRow(kit: Kit, handlers: Handlers, isBusy: boolean, isDocked: bool
       {tool('tool:fetch', 'fetch', t().fetch, () => handlers.act('fetch'))}
       {tool('tool:pull', 'pull', t().pull, () => handlers.act('pull'))}
       {tool('tool:push', 'push', t().push, () => handlers.act('push'))}
+      {baseUpdate !== null &&
+        tool('tool:base', 'pull', t().updateFromBase(baseUpdate.mode, clean(snapshot === null ? baseUpdate.branch : baseNameOf(snapshot, baseUpdate))), () =>
+          handlers.act('updateFromBase', { ref: baseUpdate.ref }),
+        )}
     </Box>
   )
+}
+
+/**
+ * What taking in new commits would do where it would not go cleanly, as
+ * GitHub warns on a pull request: per base and for the pull, the files that
+ * would conflict and the local changes that would be overwritten.
+ */
+function previewRows(kit: Kit, snapshot: ScSnapshot): RenderElement[] {
+  const { Text } = kit
+  const previews = [
+    ...snapshot.bases.map(base => ({ ref: base.ref, preview: base.preview })),
+    ...(snapshot.upstream === null ? [] : [{ ref: snapshot.upstream, preview: snapshot.pullPreview }]),
+  ]
+
+  return previews.flatMap(({ ref, preview }) => {
+    const conflicts = preview?.conflicts ?? []
+    const overwrites = preview?.overwrites ?? []
+
+    return [
+      ...(conflicts.length > 0
+        ? [
+            <Text key={`conflict:${ref}`} color={COLOR.error} wrap="wrap">
+              {`${GLYPH.wouldConflict} ${t().wouldConflict(clean(ref), conflicts.map(clean).join(', '))}`}
+            </Text>,
+          ]
+        : []),
+      ...(overwrites.length > 0
+        ? [
+            <Text key={`overwrite:${ref}`} color={COLOR.warn} wrap="wrap">
+              {`${GLYPH.wouldOverwrite} ${t().wouldOverwrite(clean(ref), overwrites.map(clean).join(', '))}`}
+            </Text>,
+          ]
+        : []),
+    ]
+  })
 }
 
 function infoRow(kit: Kit, snapshot: ScSnapshot, view: ScView, staleAfterMs: number): RenderElement {
@@ -418,6 +458,13 @@ function infoRow(kit: Kit, snapshot: ScSnapshot, view: ScView, staleAfterMs: num
       )}
       {snapshot.behind > 0 && <Text color={COLOR.behind}>{` ${snapshot.behind}${GLYPH.behind}`}</Text>}
       {snapshot.ahead > 0 && <Text color={COLOR.ahead}>{` ${snapshot.ahead}${GLYPH.ahead}`}</Text>}
+      {snapshot.bases.map(base => (
+        <Text key={base.ref}>
+          <Text color={COLOR.muted}>{` · ${t().baseInfo(clean(base.ref))}`}</Text>
+          {base.behind > 0 && <Text color={COLOR.behind}>{` ${base.behind}${GLYPH.behind}`}</Text>}
+          {base.ahead > 0 && <Text color={COLOR.ahead}>{` ${base.ahead}${GLYPH.ahead}`}</Text>}
+        </Text>
+      ))}
       {freshness !== null && (
         <Text color={freshness.isWarning ? COLOR.warn : COLOR.muted}>
           {` · ${freshness.isAge ? t().checked(freshness.text) : freshness.text}`}
@@ -594,7 +641,7 @@ export function paneView(
   const { Box, Button, Text } = kit
   const isBusy = view.busy !== null
   const isFolded = (id: string) => view.folded.includes(id)
-  const top = headerRow(kit, handlers, isBusy, isDocked)
+  const top = headerRow(kit, snapshot, handlers, isBusy, isDocked)
   // the terminal draws a docked pane's close mark in its first row; the
   // desktop puts it in a title bar of its own
   const hasMarkRow = isDocked && kit.Svg === null
@@ -712,6 +759,7 @@ export function paneView(
     <Box flexDirection="column" paddingX={1} paddingTop={hasMarkRow ? 1 : 0}>
       {top}
       {infoRow(kit, snapshot, view, staleAfterMs)}
+      {previewRows(kit, snapshot)}
       {details?.remote != null && remoteRow(kit, snapshot.remoteName ?? 'remote', details.remote)}
       {snapshot.isLinkedWorktree && dimLine(kit, t().worktreeOf(shortPathOf(snapshot.commonDir.replace(/[\\/]\.git[\\/]?$/, ''))))}
       {operation !== null && <Text color={conflictCount > 0 ? COLOR.error : COLOR.warn} wrap="wrap">{operation}</Text>}

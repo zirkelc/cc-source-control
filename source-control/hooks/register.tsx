@@ -6,14 +6,15 @@ import type { EngineInterface, PaneOpenArgs, Register, RenderSurface, Timer, UiO
 
 import type { ScProbe, ScSnapshot, ScView } from '../types'
 import { runAction, runningLabelOf } from './actions'
-import type { ActionName, ActionOutcome } from './actions'
+import type { ActionArg, ActionName, ActionOutcome } from './actions'
 import { pickLanguage, setLanguage, t } from './i18n'
+import { noteOf } from './notes'
 import type { Language } from './i18n'
 import { gitOf } from './git'
 import type { Git, ProcessRun } from './git'
 import type { RepoPaths } from './parse'
 import { readSnapshot, repoOf, withDetails } from './snapshot'
-import type { Files } from './snapshot'
+import type { BaseConfig, Files } from './snapshot'
 import { bandView } from './ui/band'
 import type { Handlers } from './ui/handlers'
 import { changeCountOf, countsOf, fetchAgeOf, operationTextOf } from './ui/model'
@@ -41,7 +42,7 @@ const WATCH_MS = 2_000
 const REFRESH_AFTER_TOOL_MS = 400
 const QUIET_SSH = 'ssh -o BatchMode=yes -o ConnectTimeout=15'
 const QUIET_ACTIONS: readonly ActionName[] = ['stage', 'unstage', 'stageAll', 'unstageAll']
-const REMOTE_ACTIONS: readonly ActionName[] = ['fetch', 'pull', 'push', 'sync', 'publish']
+const REMOTE_ACTIONS: readonly ActionName[] = ['fetch', 'pull', 'push', 'sync', 'publish', 'updateFromBase']
 
 /**
  * The engine as session.start bound it; every timer, press and later hook
@@ -70,6 +71,7 @@ type Host = {
   write: (path: string, text: string) => Promise<void>
   focus: (key: string) => Promise<unknown>
   submitPrompt: (text: string) => Promise<unknown>
+  tellClaude: (text: string) => Promise<unknown>
 }
 
 function bind($: EngineInterface): Host {
@@ -113,6 +115,8 @@ function bind($: EngineInterface): Host {
     write: (path, text) => $.fs.write(path, text),
     focus: key => $.ui.focus({ requestId: PANE_ID, key }),
     submitPrompt: text => $.prompt.submit({ text }),
+    // a row the model reads with the next request; it starts no turn
+    tellClaude: text => $.session.append({ message: { type: 'user', content: [{ type: 'text', text }] } }),
   }
 }
 
@@ -131,6 +135,11 @@ export const register: Register = (on, options) => {
   const pollMs = Math.max(5, numberOf(options.pollSeconds, 30)) * 1000
   const fetchEveryMs = numberOf(options.fetchIntervalMinutes, 10) * 60_000
   const staleAfterMs = Math.max(1, numberOf(options.staleAfterHours, 12)) * 3_600_000
+  const baseConfig: BaseConfig = {
+    branch: typeof options.baseBranch === 'string' ? options.baseBranch : '',
+    mode: options.baseUpdateMode === 'rebase' ? 'rebase' : 'merge',
+  }
+  const isTellingClaude = options.tellClaude !== false
 
   let host: Host | null = null
   let paths: RepoPaths | null = null
@@ -289,7 +298,7 @@ export const register: Register = (on, options) => {
     }
 
     const git = gitFor(engine)
-    const snapshot = await readSnapshot(git, engine.files, paths, await engine.now())
+    const snapshot = await readSnapshot(git, engine.files, paths, await engine.now(), baseConfig)
 
     if (snapshot === null) {
       paths = null
@@ -376,10 +385,18 @@ export const register: Register = (on, options) => {
     return quietEnv
   }
 
+  /**
+   * Runs one action and shows how it ended.
+   *
+   * @param isTold whether the agent hears about it: an action from the band
+   *   or the panel, which it never sees otherwise (a `/git` command's output
+   *   reaches it as the command's own row)
+   */
   async function act(
     name: ActionName,
-    arg: { message?: string; paths?: readonly string[] } = {},
+    arg: ActionArg = {},
     isQuiet = false,
+    isTold = !isQuiet,
   ): Promise<ActionOutcome | null> {
     const engine = host
 
@@ -407,11 +424,12 @@ export const register: Register = (on, options) => {
     }))
 
     let settle = (view: ScView): ScView => view
+    let told: { before: ScSnapshot; outcome: ActionOutcome } | null = null
 
     try {
       const git = gitFor(engine)
       const repo = paths
-      const snapshot = (await readSnapshot(git, engine.files, repo, await engine.now())) ?? (await engine.getSnapshot())
+      const snapshot = (await readSnapshot(git, engine.files, repo, await engine.now(), baseConfig)) ?? (await engine.getSnapshot())
 
       if (!snapshot) {
         return null
@@ -421,7 +439,7 @@ export const register: Register = (on, options) => {
         {
           git,
           snapshot,
-          reread: async () => readSnapshot(git, engine.files, repo, await engine.now()),
+          reread: async () => readSnapshot(git, engine.files, repo, await engine.now(), baseConfig),
           quietEnv: isQuiet ? await quietEnvOf(engine) : {},
         },
         name,
@@ -455,6 +473,10 @@ export const register: Register = (on, options) => {
         engine.toast(outcome.text)
       }
 
+      if (isTold && isTellingClaude) {
+        told = { before: snapshot, outcome }
+      }
+
       return outcome
     } finally {
       isActing = false
@@ -463,6 +485,14 @@ export const register: Register = (on, options) => {
       // back for a frame
       await refresh()
       await engine.updateView(view => ({ ...settle(view), busy: null, isFetching: false }))
+
+      if (told !== null) {
+        const note = noteOf(name, arg, told.outcome, told.before, await engine.getSnapshot())
+
+        if (note !== null) {
+          await engine.tellClaude(note).catch(error => engine.log(`telling Claude failed: ${String(error)}`))
+        }
+      }
     }
   }
 
@@ -657,6 +687,7 @@ export const register: Register = (on, options) => {
       t().summaryBranch(snapshot.branch ?? `${snapshot.head ?? '?'} (detached)`),
       snapshot.upstream ? t().summaryUpstream(snapshot.upstream) : t().noUpstream,
       countsOf(snapshot) || t().inSync,
+      ...snapshot.bases.map(base => t().summaryBase(base.ref, countsOf(base))),
       t().changedFiles(changeCountOf(snapshot)),
       operationTextOf(snapshot),
     ].filter((part): part is string => typeof part === 'string' && part !== '')
@@ -828,19 +859,35 @@ export const register: Register = (on, options) => {
         return { text: t().commitUsage }
       }
 
-      const outcome = await act('commit', { message })
+      const outcome = await act('commit', { message }, false, false)
 
       return { text: outcome?.text ?? t().busy }
     }
 
-    const verbs: readonly ActionName[] = ['fetch', 'pull', 'push', 'sync', 'publish']
-    const name = verbs.find(one => one === verb)
+    const verbs = new Map<string, ActionName>([
+      ['fetch', 'fetch'],
+      ['pull', 'pull'],
+      ['push', 'push'],
+      ['sync', 'sync'],
+      ['publish', 'publish'],
+      ['update', 'updateFromBase'],
+    ])
+    const name = verbs.get(verb)
 
     if (!name) {
       return { text: t().usage }
     }
 
-    const outcome = await act(name)
+    // `/git update upstream` picks the base on that remote; the first base without one
+    const [, remote] = args.split(/\s+/)
+    const snapshot = remote === undefined || name !== 'updateFromBase' ? null : await host.getSnapshot()
+    const ref = snapshot?.bases.find(base => base.remote === remote)?.ref
+
+    if (remote !== undefined && name === 'updateFromBase' && ref === undefined) {
+      return { text: t().noBaseOn(remote) }
+    }
+
+    const outcome = await act(name, ref === undefined ? {} : { ref }, false, false)
 
     return { text: outcome?.text || t().busy }
   })

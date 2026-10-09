@@ -25,14 +25,49 @@ export const COLOR = {
 } as const
 
 /**
+ * The band's colors in the terminal, as a git statusline prints them: the
+ * glyph blue, the branch red, changes and incoming commits yellow, outgoing
+ * green, a worktree magenta. A statusline's escape codes get the terminal's
+ * own soft palette, while a color name here is drawn as a fixed bright color
+ * (and the terminal's palette cannot be named), so these are the palette's
+ * values as hex: Tomorrow Night's. The other surfaces keep the theme keys,
+ * which read right in light and dark themes alike.
+ */
+export const STATUSLINE_COLOR = {
+  glyph: '#81a2be',
+  branch: '#cc6666',
+  changes: '#f0c674',
+  ahead: '#b5bd68',
+  behind: '#f0c674',
+  worktree: '#b294bb',
+} as const
+
+/**
+ * The band's colors on the desktop, the editor and the phone.
+ */
+export const THEMED_BAND_COLOR: Readonly<Record<keyof typeof STATUSLINE_COLOR, string | undefined>> = {
+  glyph: COLOR.muted,
+  branch: undefined,
+  changes: undefined,
+  ahead: COLOR.ahead,
+  behind: COLOR.behind,
+  worktree: COLOR.remote,
+}
+
+/**
  * Single-width glyphs only: emoji shift the terminal's columns.
  */
 export const GLYPH = {
   branch: '⎇',
+  worktree: '♣',
+  wouldConflict: '✗',
+  wouldOverwrite: '⚠',
   behind: '↓',
   ahead: '↑',
   sync: '↻',
   publish: '⇡',
+  push: '⇡',
+  pull: '⇣',
   changes: '✎',
   clean: '✓',
   commit: '✓',

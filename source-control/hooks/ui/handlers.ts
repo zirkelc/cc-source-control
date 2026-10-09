@@ -1,4 +1,4 @@
-import type { ActionName } from '../actions'
+import type { ActionArg, ActionName } from '../actions'
 import type { Primary } from './model'
 
 /**
@@ -6,7 +6,7 @@ import type { Primary } from './model'
  */
 export type Handlers = {
   /** Runs one action (fetch, pull, push, stage, …). */
-  act: (name: ActionName, arg?: { message?: string; paths?: readonly string[] }) => void
+  act: (name: ActionName, arg?: ActionArg) => void
   /** The blue button's press for its kind. */
   primary: (kind: Primary['kind']) => void
   /** Opens the panel, or closes it when open. */

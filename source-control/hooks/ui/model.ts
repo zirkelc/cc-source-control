@@ -1,6 +1,7 @@
 import type { ScSnapshot, ScView } from '../../types'
 import { agoOf } from '../format'
 import { t } from '../i18n'
+import { GLYPH } from './theme'
 import type { IconName } from './icons'
 
 /**
@@ -68,6 +69,32 @@ export function primaryOf(snapshot: ScSnapshot): Primary | null {
   }
 
   return null
+}
+
+type Base = ScSnapshot['bases'][number]
+
+/**
+ * Whether a base's new commits can be taken in now: it has some, and no
+ * conflict or operation is in the way.
+ */
+export function canUpdateFrom(snapshot: ScSnapshot, base: Base): boolean {
+  return base.behind > 0 && snapshot.conflicts.length === 0 && snapshot.operation === null
+}
+
+/**
+ * The first base whose new commits can be taken in now, or null.
+ */
+export function baseUpdateOf(snapshot: ScSnapshot): Base | null {
+  return snapshot.bases.find(base => canUpdateFrom(snapshot, base)) ?? null
+}
+
+/**
+ * A base as the band names it: `main` when `origin` is the only base, as a
+ * git statusline does; with the remote otherwise (`upstream/main`,
+ * `origin/main`), so in a fork it is clear which side the commits are on.
+ */
+export function baseNameOf(snapshot: ScSnapshot, base: Base): string {
+  return snapshot.bases.length === 1 && base.remote === 'origin' ? base.branch : base.ref
 }
 
 /**
@@ -172,4 +199,23 @@ export function branchTextOf(snapshot: ScSnapshot): string {
   }
 
   return snapshot.head ? `${snapshot.head} (detached)` : '(detached)'
+}
+
+/**
+ * The mark a button that takes in commits carries when that would not go
+ * cleanly, as GitHub marks a pull request: ` ✗2` for two files that would
+ * conflict, ` ⚠` when local changes would be overwritten (git then refuses
+ * to start); empty for a clean merge or one not worked out.
+ */
+export function previewMarkOf(preview: ScSnapshot['pullPreview']): string {
+  if (preview === null) {
+    return ''
+  }
+
+  const conflicts = preview.conflicts?.length ?? 0
+
+  return [
+    conflicts > 0 ? ` ${GLYPH.wouldConflict}${conflicts}` : '',
+    preview.overwrites.length > 0 ? ` ${GLYPH.wouldOverwrite}` : '',
+  ].join('')
 }

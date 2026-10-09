@@ -63,8 +63,41 @@ export type ScDetails = {
 }
 
 /**
+ * How the branch takes in the base branch's new commits.
+ */
+export type ScBaseMode = 'merge' | 'rebase'
+
+/**
+ * What taking in new commits would do, worked out without touching the
+ * working tree: the files that would conflict (null when git cannot say,
+ * before 2.38), and the files with local changes the merge would overwrite,
+ * which stops it before it starts.
+ */
+export type ScMergePreview = {
+  conflicts: string[] | null
+  overwrites: string[]
+}
+
+/**
+ * The branch the work goes back into (`origin/main`, `upstream/main` in a
+ * fork), and the counts against it: `behind` commits on the base not here
+ * yet, `ahead` commits here not on the base.
+ */
+export type ScBase = {
+  ref: string
+  remote: string
+  branch: string
+  ahead: number
+  behind: number
+  mode: ScBaseMode
+  /** null while the base has nothing new */
+  preview: ScMergePreview | null
+}
+
+/**
  * The repository as last read: branch, upstream, the counts against it,
- * the changed files and when it was last fetched.
+ * the base branch and the counts against that, the changed files and when
+ * it was last fetched.
  */
 export type ScSnapshot = {
   root: string
@@ -78,6 +111,10 @@ export type ScSnapshot = {
   remoteName: string | null
   ahead: number
   behind: number
+  /** one per base remote, `upstream` before `origin`; empty without one */
+  bases: ScBase[]
+  /** what a pull would do; null while the upstream has nothing new */
+  pullPreview: ScMergePreview | null
   staged: ScFile[]
   unstaged: ScFile[]
   conflicts: ScFile[]

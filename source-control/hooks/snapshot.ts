@@ -1,4 +1,4 @@
-import type { ScCommit, ScDetails, ScSnapshot } from '../types'
+import type { ScBase, ScBaseMode, ScCommit, ScDetails, ScMergePreview, ScSnapshot } from '../types'
 import { remoteShownOf } from './format'
 import { NO_LOCKS } from './git'
 import type { Git } from './git'
@@ -7,11 +7,16 @@ import {
   countLines,
   LOG_FORMAT,
   parseBranches,
+  parseLeftRight,
   parseLog,
+  parseMergeTree,
+  parseRemoteRefs,
   parseRepoPaths,
   parseStashes,
   parseStatus,
   parseWorktrees,
+  pickBases,
+  REMOTE_REF_FORMAT,
 } from './parse'
 import type { RepoPaths } from './parse'
 
@@ -91,13 +96,111 @@ async function fetchedAtOf(files: Files, paths: RepoPaths): Promise<number | nul
 }
 
 /**
+ * Which base branch to compare against and how to take in its commits, as
+ * the plugin's options set them; an empty branch picks one automatically.
+ */
+export type BaseConfig = { branch: string; mode: ScBaseMode }
+
+export const AUTO_BASE: BaseConfig = { branch: '', mode: 'merge' }
+
+type RemoteRefs = ReturnType<typeof parseRemoteRefs>
+
+/**
+ * A merge worked out once per pair of commits, as the pair is unchanged until
+ * one side moves: the files that would conflict and the files it changes.
+ */
+const MERGES = new Map<string, { conflicts: string[] | null; changed: string[] }>()
+const MERGES_KEPT = 64
+
+/**
+ * What taking `theirs` into `head` would do, without touching the working
+ * tree: `git merge-tree` for the conflicts, unless the merge is a
+ * fast-forward (`canConflict` false), and the files it changes against the
+ * paths with local changes, which git refuses to overwrite.
+ *
+ * @param head the full id of HEAD
+ * @param theirs the full id of the commit taken in
+ * @param canConflict whether HEAD has commits of its own, so a real merge
+ * @param localPaths the paths with local changes, untracked ones included
+ */
+async function previewOf(
+  git: Git,
+  head: string,
+  theirs: string,
+  canConflict: boolean,
+  localPaths: ReadonlySet<string>,
+): Promise<ScMergePreview> {
+  const key = `${head}:${theirs}:${canConflict}`
+  let merge = MERGES.get(key)
+
+  if (merge === undefined) {
+    const [tree, diff] = await Promise.all([
+      canConflict ? git([NO_LOCKS, 'merge-tree', '--write-tree', '--name-only', '--no-messages', head, theirs]) : null,
+      git([NO_LOCKS, 'diff', '--name-only', `${head}...${theirs}`, '--']),
+    ])
+
+    merge = {
+      conflicts: tree === null ? [] : parseMergeTree(tree.out, tree.code),
+      changed: diff.ok ? diff.out.split(/\r?\n/).filter(path => path !== '') : [],
+    }
+
+    if (MERGES.size >= MERGES_KEPT) {
+      MERGES.delete(MERGES.keys().next().value ?? '')
+    }
+
+    MERGES.set(key, merge)
+  }
+
+  return { conflicts: merge.conflicts, overwrites: merge.changed.filter(path => localPaths.has(path)) }
+}
+
+/**
+ * The base branches and the counts against each: in a fork the project's and
+ * the fork's own. On a base branch itself (main tracking origin/main) its
+ * base repeats the upstream counts, so the band reads the same on every
+ * branch. A base with new commits carries what taking them in would do.
+ */
+async function basesOf(
+  git: Git,
+  remotes: readonly string[],
+  remoteRefs: RemoteRefs,
+  config: BaseConfig,
+  head: string | null,
+  localPaths: ReadonlySet<string>,
+): Promise<ScBase[]> {
+  const picked = pickBases(remoteRefs, remotes, config.branch)
+
+  const counted = await Promise.all(
+    picked.map(async (base): Promise<ScBase | null> => {
+      const result = await git([NO_LOCKS, 'rev-list', '--left-right', '--count', `HEAD...${base.ref}`, '--'])
+      const counts = result.ok ? parseLeftRight(result.out) : null
+
+      if (counts === null) {
+        return null
+      }
+
+      const theirs = remoteRefs.shas.get(base.ref)
+      const preview =
+        counts.behind > 0 && head !== null && theirs !== undefined
+          ? await previewOf(git, head, theirs, counts.ahead > 0, localPaths)
+          : null
+
+      return { ...base, ...counts, mode: config.mode, preview }
+    }),
+  )
+
+  return counted.filter((base): base is ScBase => base !== null)
+}
+
+/**
  * The band's reading: one `git status`, the operation in progress, the last
- * fetch, and the remote when the branch has no upstream.
+ * fetch, the remote when the branch has no upstream, and the base branch.
  *
  * @param git a runner in the repository
  * @param files the file system calls
  * @param paths the repository
  * @param now the time of the reading
+ * @param baseConfig the configured base branch and how to take it in
  * @returns the snapshot, or null when git could not read the repository
  */
 export async function readSnapshot(
@@ -105,6 +208,7 @@ export async function readSnapshot(
   files: Files,
   paths: RepoPaths,
   now: number,
+  baseConfig: BaseConfig = AUTO_BASE,
 ): Promise<ScSnapshot | null> {
   let status = await git([NO_LOCKS, 'status', '--porcelain=v2', '--branch', '--show-stash', '-z'])
 
@@ -128,6 +232,24 @@ export async function readSnapshot(
     ? (remotes.find(name => reading.upstream?.startsWith(`${name}/`)) ?? null)
     : null
 
+  const remoteRefs =
+    remotes.length === 0 || reading.isUnborn
+      ? null
+      : await git([NO_LOCKS, 'for-each-ref', REMOTE_REF_FORMAT, 'refs/remotes']).then(listed =>
+          listed.ok ? parseRemoteRefs(listed.out) : null,
+        )
+
+  // git refuses a merge that would overwrite a local change, an untracked file's too
+  const localPaths = new Set([...reading.staged, ...reading.unstaged, ...reading.conflicts].map(file => file.path))
+  const head = reading.oid || null
+
+  const bases = remoteRefs === null ? [] : await basesOf(git, remotes, remoteRefs, baseConfig, head, localPaths)
+  const upstreamSha = reading.upstream === null ? undefined : remoteRefs?.shas.get(reading.upstream)
+  const pullPreview =
+    reading.behind > 0 && head !== null && upstreamSha !== undefined
+      ? await previewOf(git, head, upstreamSha, reading.ahead > 0, localPaths)
+      : null
+
   return {
     root: paths.root,
     gitDir: paths.gitDir,
@@ -140,6 +262,8 @@ export async function readSnapshot(
     remoteName: upstreamRemote ?? (remotes.includes('origin') ? 'origin' : (remotes[0] ?? null)),
     ahead: reading.ahead,
     behind: reading.behind,
+    bases,
+    pullPreview,
     staged: reading.staged,
     unstaged: reading.unstaged,
     conflicts: reading.conflicts,

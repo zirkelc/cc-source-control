@@ -1,11 +1,11 @@
 {
   "name": "source-control",
-  "version": "0.7.1",
-  "description": "Source Control for Claude Code: Git status above the chat box, a panel with changes, commit, a history graph, branches and worktrees, plus fetch, pull, push and sync in one click. English and German.",
+  "version": "0.8.0",
+  "description": "Source Control for Claude Code: Git status above the chat box, a panel with changes, commit, a history graph, branches and worktrees, plus fetch, pull, push and sync in one click, and how far the branch is behind its base branch with one-click update from it. English and German.",
   "author": {
     "name": "manuel-will"
   },
-  "repository": "https://github.com/manuel-will/cc-source-control",
+  "repository": "https://github.com/zirkelc/cc-source-control",
   "types": "./types/index.d.ts",
   "userConfig": {
     "fetchIntervalMinutes": {
@@ -35,6 +35,31 @@
       "description": "`auto` follows Claude Code’s language; `en` or `de` sets it.",
       "required": false,
       "default": "auto"
+    },
+    "baseBranch": {
+      "type": "string",
+      "title": "Base branch",
+      "description": "The branch to compare with and update from, e.g. `main` or `upstream/develop`. Empty: the remote’s default branch, `upstream` before `origin`.",
+      "required": false,
+      "default": ""
+    },
+    "baseUpdateMode": {
+      "type": "string",
+      "title": "Update from base",
+      "description": "`merge` merges the base branch into the current branch; `rebase` rebases the current branch onto it.",
+      "required": false,
+      "default": "merge",
+      "options": [
+        "merge",
+        "rebase"
+      ]
+    },
+    "tellClaude": {
+      "type": "boolean",
+      "title": "Tell Claude",
+      "description": "After a git action from the band or the panel (pull, push, merge, commit, …), add a short note that Claude reads with the next message. It starts no turn.",
+      "required": false,
+      "default": true
     }
   }
 }

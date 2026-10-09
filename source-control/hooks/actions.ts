@@ -12,6 +12,7 @@ export type ActionName =
   | 'push'
   | 'sync'
   | 'publish'
+  | 'updateFromBase'
   | 'commit'
   | 'stage'
   | 'unstage'
@@ -19,6 +20,12 @@ export type ActionName =
   | 'unstageAll'
   | 'continueOperation'
   | 'abortOperation'
+
+/**
+ * What an action works on: the commit message, the paths to stage or
+ * unstage, or the base branch to update from (`upstream/main`).
+ */
+export type ActionArg = { message?: string; paths?: readonly string[]; ref?: string }
 
 /**
  * What the person sees while an action runs (`Pulling…`).
@@ -133,6 +140,21 @@ async function fetchRemote(ctx: ActionContext, isQuiet: boolean): Promise<Action
     return failed(fetched)
   }
 
+  // in a fork a base lives on another remote (`upstream`), whose counts
+  // are only as fresh as its own fetch
+  const baseRemotes = [...new Set(snapshot.bases.map(base => base.remote))].filter(remote => remote !== snapshot.remoteName)
+
+  for (const remote of baseRemotes) {
+    const fetchedBase = await git(['fetch', '--prune', remote], {
+      env: isQuiet ? { ...QUIET_ENV, ...ctx.quietEnv } : ACTION_ENV,
+      timeoutMs: isQuiet ? QUIET_NETWORK_MS : NETWORK_MS,
+    })
+
+    if (!fetchedBase.ok) {
+      return failed(fetchedBase)
+    }
+  }
+
   const after = await ctx.reread()
   const fresh = after ? after.behind - snapshot.behind : 0
 
@@ -243,6 +265,60 @@ async function sync(ctx: ActionContext): Promise<ActionOutcome> {
     : pushed
 }
 
+/**
+ * Fetches a base branch and takes its new commits into the current branch,
+ * by a merge or a rebase as configured. A conflict stops there and leaves
+ * the operation in progress, for the panel's Resolve and Finish.
+ *
+ * @param ref the base to take in (`upstream/main`); the first base when
+ *   absent
+ */
+async function updateFromBase(ctx: ActionContext, ref: string | undefined): Promise<ActionOutcome> {
+  const { git, snapshot } = ctx
+  const base = (ref === undefined ? snapshot.bases[0] : snapshot.bases.find(one => one.ref === ref)) ?? null
+
+  if (base === null) {
+    return { ok: false, text: t().noBase }
+  }
+
+  if (snapshot.operation !== null || snapshot.conflicts.length > 0) {
+    return { ok: false, text: t().resolveFirst }
+  }
+
+  // a rebase refuses to start over uncommitted changes to tracked files
+  const hasTrackedChanges = snapshot.staged.length > 0 || snapshot.unstaged.some(file => file.letter !== 'U')
+
+  if (base.mode === 'rebase' && hasTrackedChanges) {
+    return { ok: false, text: t().commitBeforeRebase }
+  }
+
+  const fetched = await git(['fetch', base.remote, base.branch], { env: ACTION_ENV, timeoutMs: NETWORK_MS })
+
+  if (!fetched.ok) {
+    return failed(fetched)
+  }
+
+  const after = await ctx.reread()
+  const behind = after?.bases.find(one => one.ref === base.ref)?.behind ?? base.behind
+
+  if (behind === 0) {
+    return { ok: true, text: t().baseUpToDate(base.ref) }
+  }
+
+  const argv = base.mode === 'rebase' ? ['rebase', base.ref] : ['merge', '--no-edit', base.ref]
+  const updated = await git(argv, { env: ACTION_ENV, timeoutMs: 120_000 })
+
+  if (!updated.ok) {
+    // the retry the panel offers is a pull's; it would not help here
+    return { ok: false, text: failed(updated).text }
+  }
+
+  return {
+    ok: true,
+    text: base.mode === 'rebase' ? t().baseRebased(behind, base.ref) : t().baseMerged(behind, base.ref),
+  }
+}
+
 async function commit(ctx: ActionContext, message: string): Promise<ActionOutcome> {
   const { git, snapshot } = ctx
   const text = message.trim()
@@ -348,14 +424,15 @@ async function abortOperation(ctx: ActionContext): Promise<ActionOutcome> {
  *
  * @param ctx the runner, the snapshot and a fresh reading on demand
  * @param name which action
- * @param arg the commit message, or the paths to stage or unstage
+ * @param arg the commit message, the paths to stage or unstage, or the base
+ *   to update from
  * @param isQuiet a fetch nobody asked for: no prompts, a shorter timeout
  * @returns whether it worked and what to tell the person
  */
 export function runAction(
   ctx: ActionContext,
   name: ActionName,
-  arg: { message?: string; paths?: readonly string[] } = {},
+  arg: ActionArg = {},
   isQuiet = false,
 ): Promise<ActionOutcome> {
   switch (name) {
@@ -371,6 +448,8 @@ export function runAction(
       return sync(ctx)
     case 'publish':
       return publish(ctx)
+    case 'updateFromBase':
+      return updateFromBase(ctx, arg.ref)
     case 'commit':
       return commit(ctx, arg.message ?? '')
     case 'stage':
