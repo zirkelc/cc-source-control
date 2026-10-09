@@ -180,7 +180,7 @@ function statusText(
           {cutEnd(clean(branchTextOf(snapshot)), branchRoom)}
         </Text>
         {worktree !== '' && !isNarrow && (
-          <Text {...colorOf(palette.worktree)}>{`(${GLYPH.worktree} ${cutEnd(clean(worktree), branchRoom)})`}</Text>
+          <Text {...colorOf(palette.worktree)}>{` (${GLYPH.worktree} ${cutEnd(clean(worktree), branchRoom)})`}</Text>
         )}
         {changes > 0 && !hasIcons && <Text {...colorOf(palette.changes)}>{` ${GLYPH.changes} ${changes}`}</Text>}
       </Text>

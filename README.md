@@ -2,15 +2,17 @@
 
 A mod for Claude Code (desktop app and terminal) that makes Git as visible and as easy to drive as VS Code's Source Control. It is built for working on one repository from several machines: you see at a glance whether there is something to pull or push before the copies drift apart.
 
+> [!NOTE]
 > This is a fork of [manuel-will/cc-source-control](https://github.com/manuel-will/cc-source-control). It adds [base branches](#base-branches) with one-click merge or rebase, a [merge preview](#merge-preview) that shows conflicts before you press, [notes to Claude](#claude-is-told) about what you did in the band, and a band in the colors of a git statusline with more buttons.
 
 **The band above the chat box**: always there, minimal. In the terminal it uses the colors of a git statusline:
 
 ```
-⎇ feature(♣ wt) ✎ 3 ↑1 ↓2 ⇡ ⇣ [ ↻ Sync 2↓ 1↑ ] upstream/main↓5 ✗2 origin/main↓0 · ↻ 4 min ago   ◨
+⎇ feature (♣ wt) ✎ 3 ↑1 ↓2 ⇡ ⇣ [ ↻ Sync 2↓ 1↑ ] upstream/main↓5 ✗2 origin/main↓0 · ↻ 4 min ago   ◨
 ```
 
-- `⎇ feature`: the current branch (or `abc1234 (detached)`). In a linked worktree its name follows in parentheses: `feature(♣ wt)`.
+- `⎇ feature`: the current branch (or `abc1234 (detached)`).
+- `(♣ wt)`: the worktree, shown only in a linked worktree (one made with `git worktree add`, Claude's included), not in the main checkout. It is the name of the worktree's folder, in magenta in the terminal. A narrow terminal hides it.
 - `✎ 3`: changed files.
 - `↑1 ↓2`: local commits not on the remote yet (**push**), and commits on the remote not here yet (**pull**). They always show: a zero is dim, and a branch without upstream shows `↑- ↓-`.
 - `⇡` pushes, `⇣` pulls. Each shows when there is something to push or pull.
