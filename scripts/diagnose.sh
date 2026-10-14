@@ -10,7 +10,7 @@
 # bestehen aus Hooks), oder die Mod ist nur für einzelne Ordner installiert.
 set -uo pipefail
 
-PLUGIN="source-control@cc-source-control"
+PLUGIN="git@claude-git"
 CONFIG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 STATE_FILE="${CLAUDE_CONFIG_DIR:+$CLAUDE_CONFIG_DIR/.claude.json}"
 STATE_FILE="${STATE_FILE:-$HOME/.claude.json}"
@@ -49,7 +49,7 @@ CLAUDE="$(find_claude || true)"
 
 echo "Mod: $PLUGIN"
 if [ -n "$CLAUDE" ]; then
-  "$CLAUDE" plugin list 2>/dev/null | grep -A3 "source-control" | grep -E "Scope" | sed 's/^ */  installiert, /' | sort -u
+  "$CLAUDE" plugin list 2>/dev/null | grep -A3 "git@claude-git" | grep -E "Scope" | sed 's/^ */  installiert, /' | sort -u
 else
   echo "  (claude-CLI nicht gefunden: Status pro Projekt wird nur aus den Einstellungen gelesen)"
 fi
@@ -72,7 +72,7 @@ for project in "${projects[@]}"; do
     says "$file" "\"$PLUGIN\" *: *false" && reasons+=("${file#"$project"/} schaltet die Mod ab (enabledPlugins → false)")
   done
   if [ -n "$CLAUDE" ] && [ ${#reasons[@]} -eq 0 ]; then
-    status="$(cd "$project" && "$CLAUDE" plugin list 2>/dev/null | grep -A3 "source-control" | grep -c "enabled" || true)"
+    status="$(cd "$project" && "$CLAUDE" plugin list 2>/dev/null | grep -A3 "git@claude-git" | grep -c "enabled" || true)"
     [ "${status:-0}" -eq 0 ] && reasons+=("die Mod ist hier nicht aktiv (nur in anderen Ordnern installiert? bash scripts/install-user.sh)")
   fi
   # a command or skill of the project's own named git takes /git

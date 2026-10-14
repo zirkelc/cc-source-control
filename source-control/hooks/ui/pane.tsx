@@ -19,7 +19,7 @@ import type { Kit } from './theme'
 /**
  * The panel's id, its `requestId` in `ui.render`.
  */
-export const PANE_ID = 'source-control'
+export const PANE_ID = 'git'
 
 /**
  * The panel's title, shown on its tab while several panes are open.

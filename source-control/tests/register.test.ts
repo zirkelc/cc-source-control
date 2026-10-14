@@ -3,10 +3,10 @@ import { describe, expect, test } from 'claude-code/testing'
 import { BAND_PROPS, BEHIND_STATUS, ENGINE_BAND, gitCommand, inRepository, NOW, PANE_PROPS, REPOSITORY, started } from './fixtures'
 import type { Script } from './fixtures'
 
-const PLUGIN = 'source-control'
+const PLUGIN = 'git'
 const SURFACES = ['terminal', 'desktop'] as const
 const BAND = { plugin: PLUGIN, component: 'AbovePrompt', props: BAND_PROPS } as const
-const PANE = { plugin: PLUGIN, component: 'Pane', requestId: 'source-control', props: PANE_PROPS } as const
+const PANE = { plugin: PLUGIN, component: 'Pane', requestId: 'git', props: PANE_PROPS } as const
 
 /**
  * A repository's files as a fresh clone leaves them, fetched a minute ago.
@@ -166,7 +166,7 @@ describe('register', () => {
     const opened = await $.command.run(gitCommand(''))
 
     expect(opened.text).toBe('Source Control geöffnet')
-    expect(world.opened.at(-1)).toMatchObject({ id: 'source-control', focus: true })
+    expect(world.opened.at(-1)).toMatchObject({ id: 'git', focus: true })
 
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
 

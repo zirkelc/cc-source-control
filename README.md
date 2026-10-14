@@ -36,7 +36,7 @@ A mod for Claude Code (desktop app and terminal) that makes Git as visible and a
 ```
 Source Control                          ↻ Fetch  ↓ Pull  ↑ Push
 ⎇ main → origin/main 1↓ 1↑ · checked just now
-origin · github.com/zirkelc/cc-source-control
+origin · github.com/zirkelc/claude-git
 ────────────────────────────────────────────────────────────────
 Message (Enter to commit on “main”)
  ✓ Commit (all 1)  [ ↻ Sync 1↓ 1↑ ]
@@ -107,25 +107,27 @@ It needs Claude Code 2.1.287 or newer.
 **From GitHub**, once on every machine, in Claude Code:
 
 ```
-/plugin marketplace add zirkelc/cc-source-control
-/plugin install source-control@cc-source-control
+/plugin marketplace add zirkelc/claude-git
+/plugin install git@claude-git
 /reload-plugins
 ```
 
 Or in a terminal:
 
 ```
-claude plugin marketplace add zirkelc/cc-source-control
-claude plugin install source-control@cc-source-control --scope user
+claude plugin marketplace add zirkelc/claude-git
+claude plugin install git@claude-git --scope user
 ```
 
-With `--scope user` the mod is on in every project. When Claude Desktop asks where to install, pick user (all projects). If you also installed the original from `manuel-will/cc-source-control`, remove it first: both use the marketplace name `cc-source-control` and the plugin name `source-control`.
+With `--scope user` the mod is on in every project. When Claude Desktop asks where to install, pick user (all projects). If you also installed the original `source-control` plugin from `manuel-will/cc-source-control`, remove it first: both draw a band and register `/git`.
+
+The mod is also in the [zirkelc/agent-plugins](https://github.com/zirkelc/agent-plugins) marketplace, as `git@zirkelc`. Install it from one marketplace only.
 
 **From a local checkout**, to work on the mod or to run changes before they are pushed:
 
 ```
-git clone https://github.com/zirkelc/cc-source-control.git
-claude --plugin-dir ./cc-source-control/source-control
+git clone https://github.com/zirkelc/claude-git.git
+claude --plugin-dir ./claude-git/source-control
 ```
 
 To load it in every session, the desktop app included, add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of `~/.claude/settings.json` (several folders are separated by `:`):
@@ -133,18 +135,18 @@ To load it in every session, the desktop app included, add the folder to `CLAUDE
 ```json
 {
   "env": {
-    "CLAUDE_CODE_PLUGIN_DIRS": "~/path/to/cc-source-control/source-control"
+    "CLAUDE_CODE_PLUGIN_DIRS": "~/path/to/claude-git/source-control"
   }
 }
 ```
 
-A plugin loaded this way reads its settings from `pluginConfigs` under the key `source-control@inline`, or from `/config`. Saved changes reload in a running session; if not, restart it.
+A plugin loaded this way reads its settings from `pluginConfigs` under the key `git@inline`, or from `/config`. Saved changes reload in a running session; if not, restart it.
 
 **Update** an install from GitHub after a push to this repository:
 
 ```
-claude plugin marketplace update cc-source-control
-claude plugin update source-control@cc-source-control
+claude plugin marketplace update claude-git
+claude plugin update git@claude-git
 ```
 
 Then restart Claude Code. A local checkout updates with `git pull`.
@@ -194,9 +196,9 @@ MIT, see [LICENSE](LICENSE).
 ## Development
 
 ```
-cc-source-control/                ← repository = marketplace
+claude-git/                       ← repository = marketplace
 ├─ .claude-plugin/marketplace.json
-└─ source-control/                ← the mod
+└─ source-control/                ← the mod (plugin name: git)
    ├─ .claude-plugin/plugin.json
    ├─ hooks/                      register.tsx, i18n.ts, git.ts, parse.ts, snapshot.ts, actions.ts, ui/
    ├─ types/index.d.ts            contract for $.state

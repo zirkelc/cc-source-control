@@ -6,7 +6,7 @@
 #   bash scripts/install-user.sh
 set -euo pipefail
 
-PLUGIN="source-control@cc-source-control"
+PLUGIN="git@claude-git"
 
 find_claude() {
   local candidate dir
@@ -32,13 +32,13 @@ if ! CLAUDE="$(find_claude)"; then
 fi
 
 echo "Vorher:"
-"$CLAUDE" plugin list 2>&1 | grep -i -A3 "source-control" || echo "  (nicht installiert)"
+"$CLAUDE" plugin list 2>&1 | grep -i -A3 "git@claude-git" || echo "  (nicht installiert)"
 
-"$CLAUDE" plugin marketplace update cc-source-control >/dev/null 2>&1 || true
+"$CLAUDE" plugin marketplace update claude-git >/dev/null 2>&1 || true
 "$CLAUDE" plugin install "$PLUGIN" --scope user
 
 echo
 echo "Nachher:"
-"$CLAUDE" plugin list 2>&1 | grep -i -A3 "source-control"
+"$CLAUDE" plugin list 2>&1 | grep -i -A3 "git@claude-git"
 echo
 echo "Jetzt Claude Desktop ganz beenden und neu starten: /git geht dann in jedem Projekt."

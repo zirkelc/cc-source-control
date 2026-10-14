@@ -152,7 +152,7 @@ export type ScProbe = 'unknown' | 'none' | 'repo'
 
 declare module 'claude-code' {
   interface PluginState {
-    'source-control': {
+    'git': {
       probe: ScProbe
       snapshot: ScSnapshot | null
       view: ScView

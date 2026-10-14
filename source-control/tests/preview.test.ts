@@ -4,7 +4,7 @@ import { parseMergeTree } from '../hooks/parse'
 import { BAND_PROPS, inRepository, NOW, REPOSITORY, started } from './fixtures'
 import type { Script } from './fixtures'
 
-const PLUGIN = 'source-control'
+const PLUGIN = 'git'
 const HEAD = '2222222222222222222222222222222222222222'
 const MAIN = '3333333333333333333333333333333333333333'
 

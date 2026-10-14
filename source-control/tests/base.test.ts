@@ -4,7 +4,7 @@ import { parseLeftRight, parseRemoteRefs, pickBase } from '../hooks/parse'
 import { BAND_PROPS, gitCommand, inRepository, NOW, REPOSITORY, started } from './fixtures'
 import type { Script } from './fixtures'
 
-const PLUGIN = 'source-control'
+const PLUGIN = 'git'
 
 /**
  * `git for-each-ref refs/remotes` in a fork: origin (the fork) and upstream

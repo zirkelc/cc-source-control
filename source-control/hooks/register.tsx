@@ -31,11 +31,11 @@ const INITIAL_VIEW: ScView = {
   commitField: 0,
 }
 
-const PROBE_REF = { plugin: 'source-control', key: 'probe' } as const
-const SNAPSHOT_REF = { plugin: 'source-control', key: 'snapshot' } as const
+const PROBE_REF = { plugin: 'git', key: 'probe' } as const
+const SNAPSHOT_REF = { plugin: 'git', key: 'snapshot' } as const
 const PROBE = atom(PROBE_REF, 'unknown' as ScProbe)
 const SNAPSHOT = atom(SNAPSHOT_REF, null as ScSnapshot | null)
-const VIEW = atom({ plugin: 'source-control', key: 'view' } as const, INITIAL_VIEW)
+const VIEW = atom({ plugin: 'git', key: 'view' } as const, INITIAL_VIEW)
 
 const COMMAND = 'git'
 const WATCH_MS = 2_000
@@ -766,7 +766,7 @@ export const register: Register = (on, options) => {
   // only hold one, English)
   on('config.describe', async ($, e, next) => {
     const described = await next(e)
-    const field = e.key.startsWith('source-control.') ? e.key.slice('source-control.'.length) : null
+    const field = e.key.startsWith('git.') ? e.key.slice('git.'.length) : null
     const words: readonly string[] | undefined = field === null ? undefined : (t().config as Record<string, readonly string[] | undefined>)[field]
     const [label, description] = words ?? []
 
