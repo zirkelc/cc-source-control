@@ -1,9 +1,10 @@
 {
   "name": "git",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Source Control for Claude Code: Git status above the chat box, a panel with changes, commit, a history graph, branches and worktrees, plus fetch, pull, push and sync in one click, and how far the branch is behind its base branch with one-click update from it. English and German.",
   "author": {
-    "name": "manuel-will"
+    "name": "Chris Cook",
+    "url": "https://github.com/zirkelc"
   },
   "repository": "https://github.com/zirkelc/claude-git",
   "types": "./types/index.d.ts",
@@ -60,6 +61,17 @@
       "description": "After a git action from the band or the panel (pull, push, merge, commit, …), add a short note that Claude reads with the next message. It starts no turn.",
       "required": false,
       "default": true
+    },
+    "resolveConflicts": {
+      "type": "string",
+      "title": "Resolve conflicts",
+      "description": "`claude`: when a pull, sync or update from the band or the panel stops on conflicts, Claude resolves them at once (✦ marks those buttons). `ask`: the merge stops and waits for you.",
+      "required": false,
+      "default": "ask",
+      "options": [
+        "ask",
+        "claude"
+      ]
     }
   }
 }

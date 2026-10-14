@@ -3,7 +3,7 @@
 A mod for Claude Code (desktop app and terminal) that makes Git as visible and as easy to drive as VS Code's Source Control. It is built for working on one repository from several machines: you see at a glance whether there is something to pull or push before the copies drift apart.
 
 > [!NOTE]
-> This is a fork of [manuel-will/cc-source-control](https://github.com/manuel-will/cc-source-control). It adds [base branches](#base-branches) with one-click merge or rebase, a [merge preview](#merge-preview) that shows conflicts before you press, [notes to Claude](#claude-is-told) about what you did in the band, and a band in the colors of a git statusline with more buttons.
+> This is a fork of [manuel-will/cc-source-control](https://github.com/manuel-will/cc-source-control). It adds [base branches](#base-branches) with one-click merge or rebase, a [merge preview](#merge-preview) that shows conflicts before you press, [conflicts that go to Claude](#conflicts-to-claude), [notes to Claude](#claude-is-told) about what you did in the band, and a band in the colors of a git statusline with more buttons.
 
 **The band above the chat box**: always there, minimal. In the terminal it uses the colors of a git statusline:
 
@@ -19,6 +19,7 @@ A mod for Claude Code (desktop app and terminal) that makes Git as visible and a
 - `↻ Sync` (pull, then push) sits next to the counts while the branch is behind or ahead.
 - `upstream/main↓5`: commits on a base branch that are not on this branch yet. Press the chip to take them in. See [Base branches](#base-branches).
 - `✗2` or `⚠` on a chip, on `⇣` or on Sync: taking those commits in would not go cleanly. See [Merge preview](#merge-preview).
+- `✦` on a chip, on `⇣` or on Sync: if that action stops on conflicts, Claude resolves them at once. It shows only with the setting **Resolve conflicts** = `claude`. See [Conflicts to Claude](#conflicts-to-claude).
 - `⇡ publish` (branch without upstream): press it to publish the branch (push with upstream).
 - `↻ 4 min ago`: when the remote was last checked (fetched). Press it to fetch. It shows at full strength (not dim) when stale, `offline` or `never checked`. A green `✓` shows only when everything is clean, in sync and freshly checked.
 - The **main button** on the right does what is due now, as VS Code's does. In the desktop app it is the app's own primary button, in the terminal VS Code's blue:
@@ -88,6 +89,21 @@ The marks sit on each base chip, on `⇣` and on Sync (it pulls first). The pane
 ```
 
 The merge is worked out in memory with `git merge-tree --write-tree`, which touches neither the working tree, the index nor `HEAD`. A fast-forward cannot conflict, so it skips that step. Each result is cached by its pair of commits, so the status poll runs it again only after a fetch or a commit moves one side. The marks only warn: the buttons still work. In rebase mode the mark is close but not exact, because a rebase applies the commits one by one. It needs git 2.38 or newer for `✗`; `⚠` works with any git.
+
+## Conflicts to Claude
+
+With the setting **Resolve conflicts** = `claude`, the buttons that take in commits (each base chip, `⇣` and Sync) carry `✦`, for example `main↓3 ✗2 ✦`. The mark only shows that the setting is on. It does not depend on the preview, because the preview can be missing or wrong.
+
+When you press such a button:
+
+1. The mod runs git itself, the same as without the setting (fetch, then merge, rebase or pull).
+2. A clean result needs no Claude turn. Claude only gets the usual [note](#claude-is-told).
+3. If git stops on conflicts, the mod sends the prompt that the panel's **Ask Claude to resolve** sends: the operation, the conflicting files, look at both sides with `git log --merge`, resolve, stage, and finish with `git commit --no-edit` or `git rebase --continue`.
+4. If git refuses to start (`⚠`, local changes would be overwritten), nothing changes and Claude is not asked.
+
+While Claude is in a turn, the mod does not touch the files that the turn works on. It gives the full task to Claude as a prompt instead ("fetch origin and merge origin/main into the current branch, and resolve conflicts if git stops"), which runs when the turn ends.
+
+`/git pull`, `/git sync` and `/git update` never ask Claude: you typed them, and Claude sees their output. The `Resolve…` button on the band stays as it is and opens the panel. With `ask` (the default), a merge that stops on conflicts waits for you.
 
 ## Claude is told
 
@@ -176,6 +192,7 @@ Then restart Claude Code. A local checkout updates with `git pull`.
 | Base branch | empty | the branch to compare with and update from, e.g. `main` or `upstream/develop`. Empty = automatic |
 | Update from base | `merge` | `merge` merges the base into the current branch; `rebase` rebases the current branch onto it |
 | Tell Claude | on | after an action from the band or the panel, add a short note that Claude reads with your next message |
+| Resolve conflicts | `ask` | `claude`: when a pull, sync or update from the band or the panel stops on conflicts, Claude resolves them at once (`✦` marks those buttons). `ask`: the merge stops and waits for you |
 
 ## Good to know
 

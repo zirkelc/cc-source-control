@@ -43,6 +43,8 @@ const REFRESH_AFTER_TOOL_MS = 400
 const QUIET_SSH = 'ssh -o BatchMode=yes -o ConnectTimeout=15'
 const QUIET_ACTIONS: readonly ActionName[] = ['stage', 'unstage', 'stageAll', 'unstageAll']
 const REMOTE_ACTIONS: readonly ActionName[] = ['fetch', 'pull', 'push', 'sync', 'publish', 'updateFromBase']
+// the actions that take in commits, and so can stop on conflicts
+const RESOLVED_BY_CLAUDE: readonly ActionName[] = ['pull', 'sync', 'updateFromBase']
 
 /**
  * The engine as session.start bound it; every timer, press and later hook
@@ -140,6 +142,7 @@ export const register: Register = (on, options) => {
     mode: options.baseUpdateMode === 'rebase' ? 'rebase' : 'merge',
   }
   const isTellingClaude = options.tellClaude !== false
+  const isResolvingWithClaude = options.resolveConflicts === 'claude'
 
   let host: Host | null = null
   let paths: RepoPaths | null = null
@@ -156,6 +159,8 @@ export const register: Register = (on, options) => {
   let bandDraws = 0
   let language: Language = 'en'
   let paneDraws = 0
+  // the model turns running now; a subagent's run raises no turn of its own
+  const turns = new Set<string>()
   const bandSurfaces = new Set<RenderSurface>()
   const paneSurfaces = new Set<RenderSurface>()
   let timers: Timer[] = []
@@ -412,6 +417,16 @@ export const register: Register = (on, options) => {
       return null
     }
 
+    const isClaudeResolving = isTold && isResolvingWithClaude && RESOLVED_BY_CLAUDE.includes(name)
+
+    // a merge under a running turn would change the files it works on, so
+    // Claude does all of it once the turn ends
+    if (isClaudeResolving && turns.size > 0) {
+      await handOver(engine, name, arg)
+
+      return null
+    }
+
     isActing = true
 
     const showsBusy = !isQuiet && !QUIET_ACTIONS.includes(name)
@@ -492,6 +507,10 @@ export const register: Register = (on, options) => {
         if (note !== null) {
           await engine.tellClaude(note).catch(error => engine.log(`telling Claude failed: ${String(error)}`))
         }
+      }
+
+      if (isClaudeResolving && ((await engine.getSnapshot())?.conflicts.length ?? 0) > 0) {
+        await askClaude()
       }
     }
   }
@@ -664,6 +683,32 @@ export const register: Register = (on, options) => {
     },
   }
 
+  /**
+   * Gives a merge, a pull or a sync to Claude as a prompt, which waits for
+   * the running turn to end.
+   */
+  async function handOver(engine: Host, name: ActionName, arg: ActionArg) {
+    const snapshot = await engine.getSnapshot()
+
+    if (!snapshot) {
+      return
+    }
+
+    const base = snapshot.bases.find(one => one.ref === arg.ref) ?? snapshot.bases[0]
+    const upstream = snapshot.upstream ?? '@{upstream}'
+    const task =
+      name === 'updateFromBase' && base !== undefined
+        ? base.mode === 'rebase'
+          ? t().handOverRebase(base.ref, base.remote)
+          : t().handOverMerge(base.ref, base.remote)
+        : name === 'sync'
+          ? t().handOverSync(upstream)
+          : t().handOverPull(upstream)
+
+    await engine.submitPrompt(t().handOverPrompt(task)).catch(() => undefined)
+    engine.toast(t().handedOver)
+  }
+
   async function askClaude() {
     const engine = host
     const snapshot = await engine?.getSnapshot()
@@ -773,7 +818,15 @@ export const register: Register = (on, options) => {
     return label === undefined ? described : { ...described, label, ...(description === undefined ? {} : { description }) }
   })
 
+  on('turn.start', async ($, e, next) => {
+    turns.add(e.turnId)
+
+    return next(e)
+  })
+
   on('turn.complete', async ($, e, next) => {
+    turns.delete(e.turnId)
+
     const result = await next(e)
 
     if (e.agentId === undefined) {
@@ -908,7 +961,7 @@ export const register: Register = (on, options) => {
 
     const kit = kitOf($.ui.resolve(e), e.surface, e.props.bodyColumns)
 
-    return bandView(kit, snapshot, view ?? INITIAL_VIEW, handlers, staleAfterMs)
+    return bandView(kit, snapshot, view ?? INITIAL_VIEW, handlers, staleAfterMs, isResolvingWithClaude)
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {

@@ -178,10 +178,22 @@ const en = {
   // what Claude is asked to do with conflicts
   conflictPrompt: (operation: string, files: string, finish: string) =>
     `There are conflicts in this Git repository (${operation}) in: ${files}. ` +
+    'Look at the commits on both sides first (`git log --merge`). ' +
     'Please resolve them sensibly, keeping both sides where that fits, remove all conflict markers, ' +
     `stage the files and ${finish}. Ask me if a decision is unclear.`,
   conflictFinishMerge: 'finish the merge with `git commit --no-edit`',
-  conflictFinishOther: (operation: string) => `continue with \`git ${operation} --continue\``,
+  conflictFinishOther: (operation: string) =>
+    `continue with \`git ${operation} --continue\`, and resolve each further stop the same way until it is done`,
+
+  // what Claude is asked to do when it is busy as the band asks for a merge
+  handOverPrompt: (task: string) =>
+    `${task} If git stops on conflicts, look at the commits on both sides, resolve them sensibly, keeping both sides where that fits, ` +
+    'remove all conflict markers, stage the files and finish the merge or rebase. Ask me if a decision is unclear.',
+  handOverMerge: (ref: string, remote: string) => `Please fetch \`${remote}\` and merge \`${ref}\` into the current branch.`,
+  handOverRebase: (ref: string, remote: string) => `Please fetch \`${remote}\` and rebase the current branch onto \`${ref}\`.`,
+  handOverPull: (upstream: string) => `Please pull the current branch from \`${upstream}\`.`,
+  handOverSync: (upstream: string) => `Please pull the current branch from \`${upstream}\`, then push it.`,
+  handedOver: 'Claude is busy. It does the merge after its turn.',
 
   // /config, as the menu lists the plugin's options
   config: {
@@ -192,6 +204,7 @@ const en = {
     baseBranch: ['Base branch', 'The branch to compare with and update from, e.g. `main` or `upstream/develop`. Empty: the remote’s default branch, `upstream` before `origin`.'],
     baseUpdateMode: ['Update from base', '`merge` merges the base branch into the current branch; `rebase` rebases the current branch onto it.'],
     tellClaude: ['Tell Claude', 'After a git action from the band or the panel (pull, push, merge, commit, …), add a short note that Claude reads with the next message. It starts no turn.'],
+    resolveConflicts: ['Resolve conflicts', '`claude`: when a pull, sync or update from the band or the panel stops on conflicts, Claude resolves them at once (✦ marks those buttons). `ask`: the merge stops and waits for you.'],
   },
 }
 
@@ -354,10 +367,21 @@ const de: Catalog = {
 
   conflictPrompt: (operation, files, finish) =>
     `Im Git-Repository gibt es Konflikte (${operation}) in: ${files}. ` +
+    'Sieh dir zuerst die Commits beider Seiten an (`git log --merge`). ' +
     'Bitte löse sie sinnvoll und behalte dabei beide Seiten, wo es passt, entferne alle Konfliktmarker, ' +
     `stage die Dateien und ${finish}. Frag mich, wenn eine Entscheidung unklar ist.`,
   conflictFinishMerge: 'schließe den Merge mit `git commit --no-edit` ab',
-  conflictFinishOther: operation => `setze mit \`git ${operation} --continue\` fort`,
+  conflictFinishOther: operation =>
+    `setze mit \`git ${operation} --continue\` fort und löse jeden weiteren Halt genauso, bis er fertig ist`,
+
+  handOverPrompt: task =>
+    `${task} Wenn Git bei Konflikten anhält, sieh dir die Commits beider Seiten an, löse sie sinnvoll und behalte dabei beide Seiten, wo es passt, ` +
+    'entferne alle Konfliktmarker, stage die Dateien und schließe den Merge oder Rebase ab. Frag mich, wenn eine Entscheidung unklar ist.',
+  handOverMerge: (ref, remote) => `Bitte hole \`${remote}\` und merge \`${ref}\` in den aktuellen Branch.`,
+  handOverRebase: (ref, remote) => `Bitte hole \`${remote}\` und rebase den aktuellen Branch auf \`${ref}\`.`,
+  handOverPull: upstream => `Bitte pulle den aktuellen Branch von \`${upstream}\`.`,
+  handOverSync: upstream => `Bitte pulle den aktuellen Branch von \`${upstream}\` und pushe ihn danach.`,
+  handedOver: 'Claude ist beschäftigt. Es macht den Merge nach seinem Turn.',
 
   config: {
     fetchIntervalMinutes: ['Fetch-Intervall (Minuten)', 'Wie oft im Hintergrund `git fetch` läuft, damit ↓-Zähler stimmen. 0 schaltet den Hintergrund-Fetch ab.'],
@@ -367,6 +391,7 @@ const de: Catalog = {
     baseBranch: ['Basis-Branch', 'Der Branch zum Vergleichen und Aktualisieren, z. B. `main` oder `upstream/develop`. Leer: der Standard-Branch des Remotes, `upstream` vor `origin`.'],
     baseUpdateMode: ['Von Basis aktualisieren', '`merge` merged den Basis-Branch in den aktuellen Branch; `rebase` setzt den aktuellen Branch darauf neu auf.'],
     tellClaude: ['Claude informieren', 'Nach einer Git-Aktion aus der Leiste oder dem Panel (Pull, Push, Merge, Commit, …) eine kurze Notiz anhängen, die Claude mit der nächsten Nachricht liest. Startet keinen Turn.'],
+    resolveConflicts: ['Konflikte lösen', '`claude`: Hält ein Pull, Sync oder Update aus der Leiste oder dem Panel bei Konflikten an, löst Claude sie sofort (✦ markiert diese Buttons). `ask`: Der Merge hält an und wartet auf dich.'],
   },
 }
 

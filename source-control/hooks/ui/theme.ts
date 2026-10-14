@@ -68,6 +68,7 @@ export const GLYPH = {
   publish: '⇡',
   push: '⇡',
   pull: '⇣',
+  claude: '✦',
   changes: '✎',
   clean: '✓',
   commit: '✓',

@@ -98,6 +98,8 @@ export function primaryButton(
  *
  * @param syncButton the main button when its job is a sync, drawn beside the
  *   counts it settles; null when the main button stays on the right
+ * @param claudeMark ` ✦` on the buttons that take in commits when Claude
+ *   resolves their conflicts, else empty
  */
 function statusText(
   kit: Kit,
@@ -106,6 +108,7 @@ function statusText(
   handlers: Handlers,
   staleAfterMs: number,
   syncButton: RenderElement | null,
+  claudeMark: string,
 ): RenderElement {
   const { Box, Button, Text } = kit
   const isNarrow = kit.columns < NARROW_COLUMNS
@@ -199,13 +202,15 @@ function statusText(
       {/* without an upstream (never pushed, detached) a placeholder keeps the layout */}
       {!hasUpstream && !snapshot.isUnborn && <Text dimColor>{` ${GLYPH.ahead}- ${GLYPH.behind}-`}</Text>}
       {hasUpstream && snapshot.ahead > 0 && remoteButton('push', GLYPH.push)}
-      {hasUpstream && snapshot.behind > 0 && remoteButton('pull', `${GLYPH.pull}${previewMarkOf(snapshot.pullPreview)}`)}
+      {hasUpstream && snapshot.behind > 0 && remoteButton('pull', `${GLYPH.pull}${previewMarkOf(snapshot.pullPreview)}${claudeMark}`)}
       {syncButton !== null && <Box marginLeft={1}>{syncButton}</Box>}
       {bases.map(base => {
         const label = `${clean(baseNameOf(snapshot, base))}${GLYPH.behind}${base.behind}${previewMarkOf(base.preview)}`
 
         // a chip with new commits takes them in, when nothing is in the way
         if (canUpdateFrom(snapshot, base)) {
+          const chip = `${label}${claudeMark}`
+
           return (
             <Box key={`base:${base.ref}`} marginLeft={1}>
               <Button
@@ -219,7 +224,7 @@ function statusText(
                   }
                 }}
               >
-                {label}
+                {chip}
               </Button>
             </Box>
           )
@@ -257,6 +262,7 @@ function statusText(
  * @param view the drawings' own state
  * @param handlers what the buttons do
  * @param staleAfterMs when the last fetch counts as old
+ * @param isResolvingWithClaude whether conflicts from the band go to Claude
  * @returns the band's tree
  */
 export function bandView(
@@ -265,6 +271,7 @@ export function bandView(
   view: ScView,
   handlers: Handlers,
   staleAfterMs: number,
+  isResolvingWithClaude = false,
 ): RenderElement {
   const { Box, Button } = kit
   const primary: Primary | null = primaryOf(snapshot)
@@ -272,7 +279,9 @@ export function bandView(
   const isBusy = view.busy !== null
 
   // a sync pulls first, so it carries the pull's mark
-  const syncMark = primary?.kind === 'sync' ? previewMarkOf(snapshot.pullPreview) : ''
+  // ✦: a conflict in what the button takes in goes to Claude at once
+  const claudeMark = isResolvingWithClaude ? ` ${GLYPH.claude}` : ''
+  const syncMark = primary?.kind === 'sync' ? `${previewMarkOf(snapshot.pullPreview)}${claudeMark}` : ''
   const primaryLabel = primary === null ? '' : `${isNarrow ? primary.short : primary.label}${syncMark}`
   const busyLabel = view.busy ?? ''
 
@@ -292,7 +301,7 @@ export function bandView(
 
   return (
     <Box flexDirection="row" width="100%" paddingRight={kit.surface === 'terminal' ? ENGINE_MARK_COLUMNS : 0}>
-      <Box flexShrink={1}>{statusText(kit, snapshot, view, handlers, staleAfterMs, isSyncBesideCounts ? main : null)}</Box>
+      <Box flexShrink={1}>{statusText(kit, snapshot, view, handlers, staleAfterMs, isSyncBesideCounts ? main : null, claudeMark)}</Box>
       <Box flexGrow={1} />
       {main !== null && !isSyncBesideCounts && !isPublish && <Box marginLeft={1}>{main}</Box>}
       <Box marginLeft={1}>
